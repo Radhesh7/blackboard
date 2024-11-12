@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Shared File Editor</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.min.js"></script>
+    <script>
+    var socket = io();
+
+    var debounceTimeout;
+    const DEBOUNCE_DELAY = 1000; // milliseconds
+    const MAX_CELL_LENGTH = 100; // maximum characters per cell
+
+    // Update the textarea when new content is received
+    socket.on('file_update', function(data) {
+        var textarea = document.querySelector('textarea');
+        if (textarea.value !== data.content) {
+            textarea.value = data.content;
+        }
+    });
+
+    // Update the table when new content is received
+    socket.on('table_update', function(data) {
+        var tableBody = document.querySelector('tbody');
+        tableBody.innerHTML = '';
+        data.table_content.forEach(row => {
+            var tr = document.createElement('tr');
+            row.forEach(cell => {
+                var td = document.createElement('td');
+                td.contentEditable = true;
+                td.innerText = cell;
+                td.addEventListener('input', debounceUpdateTable);
+                td.addEventListener('blur', updateTable);
+                tr.appendChild(td);
+            });
+            tableBody.appendChild(tr);
+        });
+    });
+
+    // Send updates to the server when the textarea content changes
+    function updateFile() {
+        var content = document.querySelector('textarea').value;
+        fetch('/update', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded'
+            },
+            body: 'content=' + encodeURIComponent(content)
+        }).catch(function(error) {
+            console.error('Error:', error);
+        });
+    }
+
+    // Debounce the updateFile function
+    function debounceUpdateFile() {
+        clearTimeout(debounceTimeout);
+        debounceTimeout = setTimeout(updateFile, DEBOUNCE_DELAY);
+    }
+
+    // Send table updates to the server
+    function updateTable() {
+        clearTimeout(debounceTimeout);
+        var tableContent = [];
+        document.querySelectorAll('tbody tr').forEach(tr => {
+            var row = [];
+            tr.querySelectorAll('td').forEach(td => {
+                td.innerText = td.innerText.slice(0, MAX_CELL_LENGTH); // limit cell content length
+                row.push(td.innerText);
+            });
+            tableContent.push(row);
+        });
+        fetch('/update_table', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ table_content: tableContent })
+        }).catch(function(error) {
+            console.error('Error:', error);
+        });
+    }
+
+    // Debounce the updateTable function
+    function debounceUpdateTable() {
+        clearTimeout(debounceTimeout);
+        debounceTimeout = setTimeout(updateTable, DEBOUNCE_DELAY);
+    }
+
+    // Add new row to the table
+    function addRow() {
+        var tableBody = document.querySelector('tbody');
+        var tr = document.createElement('tr');
+        for (var i = 0; i < 5; i++) {
+            var td = document.createElement('td');
+            td.contentEditable = true;
+            td.addEventListener('input', debounceUpdateTable);
+            td.addEventListener('blur', updateTable);
+            tr.appendChild(td);
+        }
+        tableBody.appendChild(tr);
+        updateTable();
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+        document.querySelector('textarea').addEventListener('input', debounceUpdateFile);
+        document.querySelector('#addRow').addEventListener('click', addRow);
+        socket.emit('connect');
+    });
+    </script>
+</head>
+<body>
+    <h1>Edit Shared File</h1>
+    <textarea rows="20" cols="80">{{ content }}</textarea>
+    <h2>Edit Table</h2>
+    <table border="1">
+        <thead>
+            <tr>
+                <th>Column 1</th>
+                <th>Column 2</th>
+                <th>Column 3</th>
+                <th>Column 4</th>
+                <th>Column 5</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in table_content %}
+                <tr>
+                    {% for cell in row %}
+                        <td contenteditable="true">{{ cell }}</td>
+                    {% endfor %}
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    <button id="addRow">Add Row</button>
+</body>
+</html>

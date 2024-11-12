@@ -1,0 +1,73 @@
+from flask import Flask, render_template, request, redirect, jsonify
+from flask_socketio import SocketIO, emit
+import csv
+import os
+
+app = Flask(__name__)
+app.config['SECRET_KEY'] = 'your_secret_key'
+socketio = SocketIO(app)
+
+# Update these paths to your actual file paths
+SHARED_FILE_PATH = r'C:\Users\radhe\OneDrive\Desktop\BBG Work\Blackboard\BB1\datafiles\data1.txt'
+TABLE_FILE_PATH = r'C:\Users\radhe\OneDrive\Desktop\BBG Work\Blackboard\BB1\datafiles\table_data.csv'
+
+# Ensure the CSV file exists
+if not os.path.exists(TABLE_FILE_PATH):
+    with open(TABLE_FILE_PATH, 'w', newline='') as file:
+        writer = csv.writer(file)
+        writer.writerow(['', '', '', '', ''])  # create an empty row with 5 columns
+
+@app.route('/')
+def index():
+    try:
+        with open(SHARED_FILE_PATH, 'r') as file:
+            content = file.read()
+        with open(TABLE_FILE_PATH, 'r') as file:
+            reader = csv.reader(file)
+            table_content = list(reader)
+    except FileNotFoundError:
+        content = ""
+        table_content = []
+    except Exception as e:
+        content = ""
+        table_content = []
+    return render_template('index.html', content=content, table_content=table_content)
+
+@app.route('/update', methods=['POST'])
+def update():
+    new_content = request.form['content']
+    try:
+        with open(SHARED_FILE_PATH, 'w') as file:
+            file.write(new_content)
+        socketio.emit('file_update', {'content': new_content})
+        return redirect('/')
+    except Exception as e:
+        return 'An error occurred while updating the file.', 500
+
+@app.route('/update_table', methods=['POST'])
+def update_table():
+    table_content = request.json['table_content']
+    try:
+        with open(TABLE_FILE_PATH, 'w', newline='') as file:
+            writer = csv.writer(file)
+            writer.writerows(table_content)
+        socketio.emit('table_update', {'table_content': table_content})
+        return '', 204
+    except Exception as e:
+        return 'An error occurred while updating the table.', 500
+
+@socketio.on('connect')
+def handle_connect():
+    try:
+        with open(SHARED_FILE_PATH, 'r') as file:
+            content = file.read()
+        emit('file_update', {'content': content})
+        with open(TABLE_FILE_PATH, 'r') as file:
+            reader = csv.reader(file)
+            table_content = list(reader)
+        emit('table_update', {'table_content': table_content})
+    except Exception as e:
+        pass
+
+if __name__ == '__main__':
+    socketio.run(app, host='0.0.0.0', port=5000, debug=True)
